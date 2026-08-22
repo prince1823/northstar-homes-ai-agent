@@ -14,12 +14,12 @@ Engineer assignment.
 huvo/
 ├── backend/            # FastAPI app
 │   ├── app/
-│   │   ├── main.py       # API routes: /chat, /snapshot/{id}, /end/{id}, /session/{id}, /sessions
+│   │   ├── main.py       # API routes: /chat, /end/{id}, /session/{id}, /sessions
 │   │   ├── prompt.py     # the final system prompt + analytics schema (source of truth)
 │   │   ├── llm.py        # OpenRouter client (supports per-request BYO key/model)
 │   │   ├── sessions.py   # in-memory conversation store
 │   │   ├── booking.py    # simulated site-visit booking (with failure rate)
-│   │   └── analytics.py  # analytics extraction (live snapshots + final)
+│   │   └── analytics.py  # end-of-conversation analytics extraction
 │   ├── tests/test_cases.md
 │   ├── requirements.txt
 │   └── .env.example
@@ -27,8 +27,9 @@ huvo/
 │   └── src/
 │       ├── App.jsx             # chat + conversation orchestration
 │       ├── components/
-│       │   ├── Sidebar.jsx       # conversations, live lead/analytics panels
-│       │   └── SettingsModal.jsx # BYO OpenRouter API key + model picker
+│       │   ├── Sidebar.jsx        # project info, conversation list, settings
+│       │   ├── AnalyticsModal.jsx # single popup with all analytics fields
+│       │   └── SettingsModal.jsx  # BYO OpenRouter API key + model picker
 │       └── lib/storage.js      # localStorage helpers (conversations, settings)
 └── prompt/system_prompt.md   # standalone copy of the final prompt
 ```
@@ -63,11 +64,13 @@ Open the printed local URL (typically `http://localhost:5173`).
 
 Chat with the bot in English, Hindi, or Hinglish. Ask about pricing, raise an
 objection, ask to be contacted later, ask an unknown question, or ask to book a
-site visit. The sidebar's **Lead Information**, **Site Visit**, **Follow-up**,
-and **Conversation Analytics** panels update live after every turn. Click
-**"End conversation"** to finalize the analytics for that conversation.
+site visit. Click **"End conversation"** when you're done — a single popup
+shows every analytics field extracted from the conversation (lead info, site
+visit, follow-up, lead score, intent, qualification, summary). For an already
+-ended conversation, a **"View analytics"** button in the header reopens the
+same popup from cache, with no extra API call.
 
-Optional: open **⚙️ Settings** in the sidebar to use your own OpenRouter API
+Optional: open **Settings** in the sidebar to use your own OpenRouter API
 key and pick a model, instead of relying on the server's `.env` default — see
 "Bring your own key" below.
 
@@ -85,30 +88,37 @@ key and pick a model, instead of relying on the server's `.env` default — see
   failure-handling behavior), feeds the result back to the model as a system
   note, and the model relays the outcome to the customer naturally in the same
   turn — success or failure.
-- If a booking attempt fails and the customer gives a new date/time, the
-  backend injects a fresh, request-time reminder (`_pending_retry_note` in
-  `main.py`) telling the model it must emit a new tag for the retry. This
-  exists because prose in the static system prompt alone wasn't reliably
-  enough — in testing, the model would sometimes just say "let me lock that
-  in" on a retry without ever re-invoking the tag, silently leaving the
-  booking stuck. The reminder is scoped to the session's actual last-attempt
-  outcome, so it only fires while a failure is genuinely unresolved.
-- `POST /snapshot/{session_id}` runs a lightweight analytics pass over the
-  conversation **so far** (without ending it), used to keep the sidebar's lead
-  info, site-visit, follow-up, and analytics panels updating live after every
-  turn. `POST /end/{session_id}` runs the same extraction one final time and
-  marks the conversation ended. Both use `ANALYTICS_PROMPT` in `app/prompt.py`
-  to produce structured JSON: lead name, configuration interest, budget
-  signal, purpose, timeline, interest level, preferred language, a 0–100 lead
-  score, intent, qualification status, objections raised, site-visit status,
-  follow-up requirements, escalation needs, and languages used.
+- Static prose in the system prompt alone wasn't reliably enough for a few
+  specific behaviors, so `main.py` injects short, targeted "reminder" system
+  messages at request time, only when session state says they're relevant:
+  `_pending_retry_note` (re-emit the booking tag after a failed attempt, or
+  when rescheduling an already-successful one — otherwise the model would
+  sometimes just say "let me check availability" forever without ever
+  re-invoking the tag), `_pending_stall_note` (a regex-based fallback that
+  catches the same "said it would act but didn't" pattern more generally),
+  and `_pending_name_note` (ask for the customer's name before other
+  qualifying questions, for the first few exchanges only).
+- `POST /end/{session_id}` runs one analytics pass over the full transcript
+  when the conversation ends, using `ANALYTICS_PROMPT` in `app/prompt.py` to
+  produce structured JSON: lead name, configuration interest, budget signal,
+  purpose, timeline, interest level, preferred language, a 0–100 lead score,
+  intent, qualification status, objections raised, site-visit status/date/
+  time, follow-up requirements, escalation needs, and languages used. This
+  runs exactly once per conversation — analytics are deliberately **not**
+  generated live on every turn, to keep LLM calls to roughly one per message.
+  An earlier version of this app ran a live analytics pass after every
+  assistant turn to drive a real-time sidebar, which doubled the LLM calls
+  per exchange; that was replaced with this single end-of-conversation popup,
+  both for cost and because it matches the assignment's literal spec more
+  closely.
 - The frontend keeps a per-browser conversation history in `localStorage`
   (`frontend/src/lib/storage.js`) — a **"+ New Chat"** creates a fresh session,
-  switching to a previous one restores its messages and cached analytics
-  instantly, and typing in the sidebar's search box filters conversations by
-  title. Since the backend's session store is in-memory, `/chat` accepts an
-  optional `history` field so a conversation can be transparently "rehydrated"
-  server-side if the backend restarted after the browser cached it.
+  and switching to a previous one restores its messages and (if the
+  conversation had already ended) its cached analytics instantly, with no
+  network call. Since the backend's session store is in-memory, `/chat` and
+  `/end` both accept an optional `history` field so a conversation can be
+  transparently "rehydrated" server-side if the backend restarted after the
+  browser cached it.
 - Assistant replies render with a word-by-word typing animation on the
   frontend (`App.jsx`) for a ChatGPT-like feel — the backend always returns
   the full reply in one response; the typing effect is purely client-side.
@@ -119,8 +129,8 @@ The **Settings** panel (bottom of the sidebar) lets anyone running this app
 supply their own OpenRouter API key and pick a model, instead of relying on
 whoever hosts the backend to pay for every user's requests. The key is stored
 only in `localStorage` and sent directly to this app's own backend per
-request (`api_key`/`model` fields on `/chat`, `/snapshot`, `/end`); the
-backend forwards it to OpenRouter for that one call and never persists it
+request (`api_key`/`model` fields on both `/chat` and `/end`); the backend
+forwards it to OpenRouter for that one call and never persists it
 server-side. If left empty, the backend falls back to `OPENROUTER_API_KEY` /
 `OPENROUTER_MODEL` from its own `.env`, if configured.
 
@@ -167,10 +177,6 @@ server-side. If left empty, the backend falls back to `OPENROUTER_API_KEY` /
   prompt instructions; there's no separate language-detection step.
 - CORS is left open (`*`) for local demo convenience; would be locked down for
   any real deployment.
-- The live sidebar snapshot triggers one extra LLM call after every assistant
-  turn (on top of the reply itself), so each exchange costs roughly 2x the
-  API calls it otherwise would — a deliberate simplicity/cost tradeoff for
-  this demo rather than a smarter incremental-update scheme.
 - A user-supplied API key in Settings is stored in plaintext in that browser's
   `localStorage` (standard for client-side BYO-key patterns, but worth noting
   — anyone with access to that browser profile could read it).
