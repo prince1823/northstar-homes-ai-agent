@@ -49,6 +49,7 @@ export default function App() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [streaming, setStreaming] = useState(false);
+  const [ending, setEnding] = useState(false);
   const [ended, setEnded] = useState(() => {
     const existing = loadConversations();
     return existing.find((c) => c.id === currentId)?.ended || false;
@@ -61,7 +62,11 @@ export default function App() {
   const typingTimerRef = useRef(null);
   const welcomeTimerRef = useRef(null);
 
-  const busy = loading || streaming;
+  // `ending` is deliberately separate from `loading` — loading drives the
+  // chat's typing-dots bubble (a real reply is being generated), whereas
+  // ending a conversation just fetches analytics in the background and
+  // should never make it look like the agent is typing a new message.
+  const busy = loading || streaming || ending;
   const welcomeBubble = {
     role: "assistant",
     content: messages.length === 0 ? welcomeText : WELCOME.content,
@@ -186,7 +191,7 @@ export default function App() {
 
   async function endConversation() {
     if (ended || busy || !messages.some((m) => m.role === "user")) return;
-    setLoading(true);
+    setEnding(true);
     setError(null);
     try {
       const res = await fetch(`${API_URL}/end/${currentId}`, {
@@ -211,7 +216,7 @@ export default function App() {
     } catch (err) {
       setError(err.message);
     } finally {
-      setLoading(false);
+      setEnding(false);
     }
   }
 
@@ -312,7 +317,7 @@ export default function App() {
               onClick={endConversation}
               disabled={ended || busy || !messages.some((m) => m.role === "user")}
             >
-              End conversation
+              {ending ? "Ending…" : "End conversation"}
             </button>
           </div>
         </header>

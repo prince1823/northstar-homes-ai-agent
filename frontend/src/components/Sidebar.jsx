@@ -54,7 +54,7 @@ export default function Sidebar({
         </div>
 
         {/* 2. Conversations */}
-        <div className="side-section">
+        <div className="side-section side-section-grow">
           <div className="side-section-title">Conversations</div>
           <button className="btn primary full-width small-btn" onClick={onNewChat}>
             + New Chat

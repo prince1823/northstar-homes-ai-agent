@@ -99,6 +99,13 @@
   padding: 14px 16px;
 }
 
+.side-section-grow {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .side-section-title {
   font-size: 0.78rem;
   font-weight: 700;
@@ -182,7 +189,8 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-height: 220px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
 }
 
