@@ -84,7 +84,7 @@ key and pick a model, instead of relying on the server's `.env` default — see
   (`[[BOOK_VISIT: date=... time=... configuration=...]]`) in its reply. The
   backend parses this, resolves any relative date ("this Sunday") against a
   request-time IST date note injected into the prompt, runs a simulated
-  booking (`app/booking.py`, ~20% random failure rate to exercise the
+  booking (`app/booking.py`, ~10% random failure rate to exercise the
   failure-handling behavior), feeds the result back to the model as a system
   note, and the model relays the outcome to the customer naturally in the same
   turn — success or failure.

@@ -6,7 +6,7 @@ fixed random failure rate so the prompt's booking-failure handling gets exercise
 
 import random
 
-BOOKING_FAILURE_RATE = 0.2
+BOOKING_FAILURE_RATE = 0.1
 
 
 def attempt_booking(date: str, time: str, configuration: str) -> dict:
