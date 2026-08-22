@@ -91,6 +91,15 @@ export default function Sidebar({
 
       {/* 3. Settings */}
       <button className="settings-footer-btn" onClick={onOpenSettings}>
+        <svg width="15" height="15" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path
+            d="M8.6 2.5h2.8l.4 1.9c.5.16.97.39 1.4.67l1.83-.7 1.4 2.42-1.5 1.24c.05.28.07.57.07.87s-.02.59-.07.87l1.5 1.24-1.4 2.42-1.83-.7c-.43.28-.9.51-1.4.67l-.4 1.9H8.6l-.4-1.9a5.9 5.9 0 0 1-1.4-.67l-1.83.7-1.4-2.42 1.5-1.24A5.5 5.5 0 0 1 4.4 10c0-.3.02-.59.07-.87l-1.5-1.24 1.4-2.42 1.83.7c.43-.28.9-.51 1.4-.67l.4-1.9Z"
+            stroke="currentColor"
+            strokeWidth="1.3"
+            strokeLinejoin="round"
+          />
+          <circle cx="10" cy="10" r="2.1" stroke="currentColor" strokeWidth="1.3" />
+        </svg>
         Settings
       </button>
     </aside>
