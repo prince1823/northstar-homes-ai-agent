@@ -277,6 +277,100 @@ confirmed working end-to-end in the actual browser UI, not just via API calls.
 
 ---
 
+## 12. Booking with a partial date/time (regression test)
+
+An earlier version of the prompt let the agent attempt a booking from a
+customer message that only gave a time ("raat ko 1 baje") with no date,
+producing a confusing flow (booking attempted/failed before a date even
+existed, then a later reply that both said "let me lock that in" and, in the
+same breath, declared it already booked). The prompt was tightened to require
+all three of date, time, and configuration — explicitly stated by the
+customer — before any booking tag is emitted, and to keep the pre-outcome
+reply provisional rather than a premature confirmation. Re-tested after the
+fix (session `date-fix-test-1`):
+
+1. User: `"2 BHK ka price kya hai"` → price shared, no booking attempted yet.
+2. User: `"visit krenge raat ko 1 bje"` (time only, no date) →
+   > "Aapka visit book karne ke liye, mujhe yeh confirm karna hoga ki kaunse
+   > din aap aana chahte hain. Kya aap mujhe specific date bata sakte hain?"
+
+   **Result:** ✅ No booking attempted — correctly asked for the missing date
+   instead of guessing one.
+3. User: `"Sunday ko"` →
+   > "Toh aapka visit Sunday ko raat ko 1 baje hai. Kya aap confirm kar sakte
+   > hain ki aap 2 BHK dekhna chahte hain?"
+
+   **Result:** ✅ Read back date+time, asked to confirm the still-missing
+   configuration — all three fields now explicitly gathered before booking.
+4. User: `"yes 2 BHK"` → booking attempted (this slot happened to fail):
+   > "Let me lock that in for you.
+   >
+   > Mujhe batana pada ki Sunday ko raat ko 1 baje ka slot available nahi hai.
+   > Kya aapko ek aur time ya din suggest karna pasand karenge?"
+
+   **Result:** ✅ Pre-outcome reply is provisional ("let me lock that in"), not
+   a false confirmation; the failure is relayed clearly once known, with no
+   contradiction between the two halves of the reply.
+
+A clean one-shot request with all three fields already given (session
+`date-fix-test-2`), `"3 BHK dekhna hai Monday ko dopahar 12 baje"`, produced:
+> "Great! Just to confirm, you'd like to see a 3 BHK on Monday at 12 PM. Let me
+> lock that in for you.
+>
+> Your visit to see the 3 BHK on Monday at 12 PM is all set! Thank you for
+> your interest, and I look forward to seeing you then."
+
+**Result:** ✅ Single, non-duplicated success confirmation once the outcome is
+known.
+
+---
+
+## 13. Language slip during booking + relative-date resolution (regression test)
+
+A user-reported bug: the agent replied in Hinglish for the whole conversation,
+but switched to plain English specifically once the booking flow started
+("Absolutely! I'd be happy to help you with a site visit...") — a language
+regression. Separately, "this Sunday" was echoed back as just "Sunday" with no
+actual calendar date, which is ambiguous. Two fixes: (1) the LANGUAGE section
+now explicitly states language-matching applies to every reply without
+exception, including site-visit confirmations; (2) the backend now injects the
+actual current date (IST) into the system prompt every request, and the
+prompt instructs the model to resolve relative days into explicit calendar
+dates. Re-tested live via the UI (new session):
+
+1. User: `"dekh skte hai ek baar aakr, 3 BHK"` →
+   > "Bilkul! Aap kis din aur kis time visit karna chahenge?"
+
+   **Result:** ✅ Full Hinglish, no English slip.
+2. User: `"this sunday 2pm"` →
+   > "Aapka visit is Sunday, 23 August ko 2 PM ke liye hai, sahi hai?"
+
+   **Result:** ✅ Resolved "this Sunday" to an explicit date (23 August, since
+   today was Saturday, 22 August in this test run) and stayed in Hinglish.
+3. User: `"haan sahi hai"` →
+   > "Let me lock that in for you.
+   >
+   > Aapka visit 23 August, Sunday ko 2 PM ke liye confirm ho gaya hai. Humein
+   > aapka intezaar rahega! Shukriya!"
+
+   **Result:** ✅ Booking confirmed entirely in Hinglish, explicit date
+   preserved through to the final confirmation.
+
+The sidebar's Site Visit section (now split into separate **Date** and
+**Time** rows, sourced from the structured booking record rather than a
+single combined text field) showed:
+
+```
+Status: Booked
+Date: 23 August
+Time: 14:00
+```
+
+**Result:** ✅ Both date and time visible as distinct fields, matching the
+actual booked slot.
+
+---
+
 ## Summary
 
 | # | Scenario | Result |
@@ -292,6 +386,8 @@ confirmed working end-to-end in the actual browser UI, not just via API calls.
 | 9 | Human escalation | ✅ |
 | 10 | Prompt injection / out-of-scope | ✅ |
 | 11 | Full UI end-to-end flow | ✅ |
+| 12 | Partial date/time regression fix | ✅ |
+| 13 | Language slip + relative-date resolution fix | ✅ |
 
 > Note: LLM outputs are non-deterministic — exact wording will vary slightly
 > between runs, but behavior stays consistent with the prompt's rules across

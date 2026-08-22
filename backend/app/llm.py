@@ -15,15 +15,23 @@ async def chat_completion(
     messages: list[dict],
     temperature: float = 0.7,
     max_tokens: int = 400,
+    api_key: str | None = None,
+    model: str | None = None,
 ) -> str:
-    """Send a chat completion request to OpenRouter and return the reply text."""
-    api_key = os.environ.get("OPENROUTER_API_KEY")
+    """Send a chat completion request to OpenRouter and return the reply text.
+
+    `api_key`/`model` let a caller bring their own OpenRouter key/model for this
+    one request (e.g. from the Settings panel in the UI); falling back to the
+    server's own .env values when not provided. The key is never stored — it's
+    only used for this single outbound request.
+    """
+    api_key = api_key or os.environ.get("OPENROUTER_API_KEY")
     if not api_key:
         raise LLMError(
-            "OPENROUTER_API_KEY is not set. Copy backend/.env.example to backend/.env "
-            "and add your OpenRouter key."
+            "No OpenRouter API key configured. Add one in the app's Settings panel, "
+            "or set OPENROUTER_API_KEY in backend/.env."
         )
-    model = os.environ.get("OPENROUTER_MODEL", "openai/gpt-4o-mini")
+    model = model or os.environ.get("OPENROUTER_MODEL", "openai/gpt-4o-mini")
 
     headers = {
         "Authorization": f"Bearer {api_key}",

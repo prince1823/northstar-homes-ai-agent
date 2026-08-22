@@ -14,13 +14,19 @@ def _transcript_text(history: list[dict]) -> str:
     return "\n".join(lines)
 
 
-async def generate_analytics(history: list[dict]) -> dict:
+async def generate_analytics(
+    history: list[dict],
+    api_key: str | None = None,
+    model: str | None = None,
+) -> dict:
     transcript = _transcript_text(history)
     messages = [
         {"role": "system", "content": ANALYTICS_PROMPT},
         {"role": "user", "content": f"Transcript:\n\n{transcript}"},
     ]
-    raw = await chat_completion(messages, temperature=0.0, max_tokens=600)
+    raw = await chat_completion(
+        messages, temperature=0.0, max_tokens=600, api_key=api_key, model=model
+    )
 
     cleaned = raw.strip()
     if cleaned.startswith("```"):

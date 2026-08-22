@@ -14,16 +14,22 @@ Engineer assignment.
 huvo/
 ├── backend/            # FastAPI app
 │   ├── app/
-│   │   ├── main.py       # API routes: /chat, /end/{id}, /session/{id}
-│   │   ├── prompt.py     # the final system prompt (source of truth)
-│   │   ├── llm.py        # OpenRouter client
+│   │   ├── main.py       # API routes: /chat, /snapshot/{id}, /end/{id}, /session/{id}, /sessions
+│   │   ├── prompt.py     # the final system prompt + analytics schema (source of truth)
+│   │   ├── llm.py        # OpenRouter client (supports per-request BYO key/model)
 │   │   ├── sessions.py   # in-memory conversation store
 │   │   ├── booking.py    # simulated site-visit booking (with failure rate)
-│   │   └── analytics.py  # post-conversation analytics extraction
+│   │   └── analytics.py  # analytics extraction (live snapshots + final)
 │   ├── tests/test_cases.md
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/            # React chat UI (Vite)
+│   └── src/
+│       ├── App.jsx             # chat + conversation orchestration
+│       ├── components/
+│       │   ├── Sidebar.jsx       # conversations, live lead/analytics panels
+│       │   └── SettingsModal.jsx # BYO OpenRouter API key + model picker
+│       └── lib/storage.js      # localStorage helpers (conversations, settings)
 └── prompt/system_prompt.md   # standalone copy of the final prompt
 ```
 
@@ -57,8 +63,13 @@ Open the printed local URL (typically `http://localhost:5173`).
 
 Chat with the bot in English, Hindi, or Hinglish. Ask about pricing, raise an
 objection, ask to be contacted later, ask an unknown question, or ask to book a
-site visit. Click **"End conversation"** to generate analytics from the
-transcript.
+site visit. The sidebar's **Lead Information**, **Site Visit**, **Follow-up**,
+and **Conversation Analytics** panels update live after every turn. Click
+**"End conversation"** to finalize the analytics for that conversation.
+
+Optional: open **⚙️ Settings** in the sidebar to use your own OpenRouter API
+key and pick a model, instead of relying on the server's `.env` default — see
+"Bring your own key" below.
 
 ## How it works
 
@@ -71,11 +82,36 @@ transcript.
   failure rate to exercise the failure-handling behavior), feeds the result
   back to the model as a system note, and the model relays the outcome to the
   customer naturally in the same turn — success or failure.
-- `POST /end/{session_id}` runs a second LLM pass over the full transcript
-  using a separate analytics prompt (`ANALYTICS_PROMPT` in `app/prompt.py`) to
-  produce structured JSON: configuration interest, budget signal, purpose,
-  timeline, interest level, objections raised, site-visit status, follow-up
-  requirements, escalation needs, and languages used.
+- `POST /snapshot/{session_id}` runs a lightweight analytics pass over the
+  conversation **so far** (without ending it), used to keep the sidebar's lead
+  info, site-visit, follow-up, and analytics panels updating live after every
+  turn. `POST /end/{session_id}` runs the same extraction one final time and
+  marks the conversation ended. Both use `ANALYTICS_PROMPT` in `app/prompt.py`
+  to produce structured JSON: lead name, configuration interest, budget
+  signal, purpose, timeline, interest level, preferred language, a 0–100 lead
+  score, intent, qualification status, objections raised, site-visit status,
+  follow-up requirements, escalation needs, and languages used.
+- The frontend keeps a per-browser conversation history in `localStorage`
+  (`frontend/src/lib/storage.js`) — a **"+ New Chat"** creates a fresh session,
+  switching to a previous one restores its messages and cached analytics
+  instantly, and typing in the sidebar's search box filters conversations by
+  title. Since the backend's session store is in-memory, `/chat` accepts an
+  optional `history` field so a conversation can be transparently "rehydrated"
+  server-side if the backend restarted after the browser cached it.
+- Assistant replies render with a word-by-word typing animation on the
+  frontend (`App.jsx`) for a ChatGPT-like feel — the backend always returns
+  the full reply in one response; the typing effect is purely client-side.
+
+### Bring your own key
+
+The **Settings** panel (bottom of the sidebar) lets anyone running this app
+supply their own OpenRouter API key and pick a model, instead of relying on
+whoever hosts the backend to pay for every user's requests. The key is stored
+only in `localStorage` and sent directly to this app's own backend per
+request (`api_key`/`model` fields on `/chat`, `/snapshot`, `/end`); the
+backend forwards it to OpenRouter for that one call and never persists it
+server-side. If left empty, the backend falls back to `OPENROUTER_API_KEY` /
+`OPENROUTER_MODEL` from its own `.env`, if configured.
 
 ## Key assumptions
 
@@ -86,8 +122,16 @@ transcript.
   location, configurations, starting prices) — the prompt explicitly refuses
   to invent anything beyond that (discounts, possession dates, amenities, etc.)
 - Sessions are stored in-memory only (a Python dict), per the "keep it simple"
-  instruction in the assignment. Restarting the backend clears all
-  conversations.
+  instruction in the assignment. Restarting the backend clears server-side
+  session state, though the frontend's `localStorage` cache plus the
+  `history` rehydration field on `/chat` mean an in-progress conversation can
+  usually resume seamlessly anyway.
+- Conversation history lives in each browser's `localStorage`, not a shared
+  database — conversations aren't synced across devices/browsers, only within
+  the one the user was chatting in.
+- "Lead score" is an LLM-estimated heuristic (0–100) based on the
+  conversation so far, not a calibrated scoring model — useful as a directional
+  signal in the demo, not a real qualification metric.
 - The same system prompt is meant to work for both text chat and voice; since
   this assignment's Part 2 only requires a text-based bot, voice suitability
   is addressed at the prompt level (short, speakable sentences, no markdown/
@@ -105,6 +149,13 @@ transcript.
   prompt instructions; there's no separate language-detection step.
 - CORS is left open (`*`) for local demo convenience; would be locked down for
   any real deployment.
+- The live sidebar snapshot triggers one extra LLM call after every assistant
+  turn (on top of the reply itself), so each exchange costs roughly 2x the
+  API calls it otherwise would — a deliberate simplicity/cost tradeoff for
+  this demo rather than a smarter incremental-update scheme.
+- A user-supplied API key in Settings is stored in plaintext in that browser's
+  `localStorage` (standard for client-side BYO-key patterns, but worth noting
+  — anyone with access to that browser profile could read it).
 
 ## AI tools used
 

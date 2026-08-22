@@ -4,6 +4,7 @@ Simple by design (per assignment scope): one process, no persistence, no TTL
 eviction. Fine for a demo/assignment; would move to Redis/DB for production.
 """
 
+import time
 from dataclasses import dataclass, field
 
 
@@ -13,6 +14,9 @@ class Session:
     history: list[dict] = field(default_factory=list)  # [{role, content}, ...]
     ended: bool = False
     booking: dict | None = None  # last booking attempt/result, if any
+    title: str | None = None
+    created_at: float = field(default_factory=time.time)
+    updated_at: float = field(default_factory=time.time)
 
 
 _sessions: dict[str, Session] = {}
@@ -30,3 +34,7 @@ def get(session_id: str) -> Session | None:
 
 def all_sessions() -> dict[str, Session]:
     return _sessions
+
+
+def touch(session: Session) -> None:
+    session.updated_at = time.time()
