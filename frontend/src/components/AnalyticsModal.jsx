@@ -12,7 +12,7 @@ function siteVisitLabel(status) {
   return "Not Booked";
 }
 
-function pillClass(kind, value) {
+function pillClass(value) {
   const good = ["high", "booked", "qualified"];
   const warn = ["medium", "partially_qualified"];
   const bad = ["low", "opted_out", "booking_failed_unresolved", "unqualified"];
@@ -22,7 +22,14 @@ function pillClass(kind, value) {
   return "analytics-pill neutral";
 }
 
-export default function AnalyticsModal({ analytics, onClose, onStartNew }) {
+function scoreColor(score) {
+  if (score === null) return "#c3c8d3";
+  if (score >= 66) return "#1c8a4b";
+  if (score >= 33) return "#b5750a";
+  return "#b3261e";
+}
+
+export default function AnalyticsModal({ analytics, onClose }) {
   if (!analytics) return null;
 
   if (analytics.error) {
@@ -43,6 +50,7 @@ export default function AnalyticsModal({ analytics, onClose, onStartNew }) {
 
   const a = analytics;
   const leadScore = typeof a.lead_score === "number" ? a.lead_score : null;
+  const ringColor = scoreColor(leadScore);
   const language =
     a.preferred_language && a.preferred_language !== "not_discussed"
       ? a.preferred_language
@@ -62,109 +70,96 @@ export default function AnalyticsModal({ analytics, onClose, onStartNew }) {
 
         {a.conversation_summary && <div className="analytics-summary">{a.conversation_summary}</div>}
 
-        <div className="analytics-section-label">Lead</div>
-        <div className="analytics-row">
-          <span className="analytics-label">Name</span>
-          <span className="analytics-value">{fmt(a.lead_name)}</span>
-        </div>
-        <div className="analytics-row">
-          <span className="analytics-label">Configuration</span>
-          <span className="analytics-value">{fmt(a.configuration_interest, "Undecided")}</span>
-        </div>
-        <div className="analytics-row">
-          <span className="analytics-label">Interest level</span>
-          <span className={pillClass("interest", a.interest_level)}>{fmt(a.interest_level, "Unknown")}</span>
-        </div>
-        <div className="analytics-row">
-          <span className="analytics-label">Language</span>
-          <span className="analytics-value">{fmt(language, "Not discussed")}</span>
-        </div>
-        <div className="analytics-row">
-          <span className="analytics-label">Budget</span>
-          <span className="analytics-value">{fmt(a.budget_signal, "Not discussed")}</span>
-        </div>
-        <div className="analytics-row">
-          <span className="analytics-label">Purpose</span>
-          <span className="analytics-value">{fmt(a.purpose, "Not discussed")}</span>
-        </div>
-        <div className="analytics-row">
-          <span className="analytics-label">Timeline</span>
-          <span className="analytics-value">{fmt(a.timeline, "Not discussed")}</span>
+        <div className="analytics-hero">
+          <div className="score-ring" style={{ "--pct": leadScore ?? 0, "--ring-color": ringColor }}>
+            <div className="score-ring-inner">
+              <span className="score-num">{leadScore === null ? "—" : leadScore}</span>
+              <span className="score-label">Lead score</span>
+            </div>
+          </div>
+          <div className="hero-meta">
+            <div className="hero-name">{fmt(a.lead_name, "Unnamed lead")}</div>
+            <div className="hero-pills">
+              <span className={pillClass(a.qualification_status)}>
+                {fmt(a.qualification_status, "Unknown")}
+              </span>
+              <span className={pillClass(a.interest_level)}>{fmt(a.interest_level, "Unknown")} interest</span>
+              <span className={pillClass(a.site_visit_status)}>{siteVisitLabel(a.site_visit_status)}</span>
+            </div>
+          </div>
         </div>
 
-        {Array.isArray(a.objections_raised) && a.objections_raised.length > 0 && (
-          <div className="analytics-row">
-            <span className="analytics-label">Objections</span>
-            <span className="analytics-chips">
-              {a.objections_raised.map((o, i) => (
-                <span className="analytics-chip" key={i}>
-                  {o}
+        <div className="analytics-grid">
+          <div className="analytics-card card-lead">
+            <div className="analytics-card-title">Lead details</div>
+            <div className="analytics-row">
+              <span className="analytics-label">Configuration</span>
+              <span className="analytics-value">{fmt(a.configuration_interest, "Undecided")}</span>
+            </div>
+            <div className="analytics-row">
+              <span className="analytics-label">Budget</span>
+              <span className="analytics-value">{fmt(a.budget_signal, "Not discussed")}</span>
+            </div>
+            <div className="analytics-row">
+              <span className="analytics-label">Purpose</span>
+              <span className="analytics-value">{fmt(a.purpose, "Not discussed")}</span>
+            </div>
+            <div className="analytics-row">
+              <span className="analytics-label">Timeline</span>
+              <span className="analytics-value">{fmt(a.timeline, "Not discussed")}</span>
+            </div>
+            <div className="analytics-row">
+              <span className="analytics-label">Language</span>
+              <span className="analytics-value">{fmt(language, "Not discussed")}</span>
+            </div>
+            <div className="analytics-row">
+              <span className="analytics-label">Intent</span>
+              <span className="analytics-value">{fmt(a.intent)}</span>
+            </div>
+            {Array.isArray(a.objections_raised) && a.objections_raised.length > 0 && (
+              <div className="analytics-row">
+                <span className="analytics-label">Objections</span>
+                <span className="analytics-chips">
+                  {a.objections_raised.map((o, i) => (
+                    <span className="analytics-chip" key={i}>
+                      {o}
+                    </span>
+                  ))}
                 </span>
-              ))}
-            </span>
+              </div>
+            )}
           </div>
-        )}
 
-        <div className="analytics-section-label">Site Visit</div>
-        <div className="analytics-row">
-          <span className="analytics-label">Status</span>
-          <span className={pillClass("visit", a.site_visit_status)}>{siteVisitLabel(a.site_visit_status)}</span>
-        </div>
-        <div className="analytics-row">
-          <span className="analytics-label">Date</span>
-          <span className="analytics-value">{fmt(a.site_visit_date)}</span>
-        </div>
-        <div className="analytics-row">
-          <span className="analytics-label">Time</span>
-          <span className="analytics-value">{fmt(a.site_visit_time)}</span>
-        </div>
-
-        <div className="analytics-section-label">Follow-up</div>
-        <div className="analytics-row">
-          <span className="analytics-label">Required</span>
-          <span className="analytics-value">{fmt(a.follow_up_required, "No")}</span>
-        </div>
-        <div className="analytics-row">
-          <span className="analytics-label">Notes</span>
-          <span className="analytics-value">{fmt(a.follow_up_date || a.follow_up_notes)}</span>
-        </div>
-        {a.human_escalation_needed && (
-          <div className="analytics-row">
-            <span className="analytics-label">Escalation</span>
-            <span className="analytics-value">{fmt(a.escalation_reason, "Needed")}</span>
+          <div className="analytics-card card-visit">
+            <div className="analytics-card-title">Site visit</div>
+            <div className="analytics-row">
+              <span className="analytics-label">Date</span>
+              <span className="analytics-value">{fmt(a.site_visit_date)}</span>
+            </div>
+            <div className="analytics-row">
+              <span className="analytics-label">Time</span>
+              <span className="analytics-value">{fmt(a.site_visit_time)}</span>
+            </div>
           </div>
-        )}
 
-        <div className="analytics-section-label">Lead Score</div>
-        <div className="analytics-row">
-          <span className="analytics-label">Score</span>
-          <span className="analytics-value">{leadScore === null ? "—" : `${leadScore}/100`}</span>
-        </div>
-        {leadScore !== null && (
-          <div className="lead-score-bar light">
-            <div
-              className="lead-score-fill"
-              style={{
-                width: `${leadScore}%`,
-                background: leadScore >= 66 ? "#1c8a4b" : leadScore >= 33 ? "#b5750a" : "#b3261e",
-              }}
-            />
+          <div className="analytics-card card-followup">
+            <div className="analytics-card-title">Follow-up</div>
+            <div className="analytics-row">
+              <span className="analytics-label">Required</span>
+              <span className="analytics-value">{fmt(a.follow_up_required, "No")}</span>
+            </div>
+            <div className="analytics-row">
+              <span className="analytics-label">Notes</span>
+              <span className="analytics-value">{fmt(a.follow_up_date || a.follow_up_notes)}</span>
+            </div>
+            {a.human_escalation_needed && (
+              <div className="analytics-row">
+                <span className="analytics-label">Escalation</span>
+                <span className="analytics-value">{fmt(a.escalation_reason, "Needed")}</span>
+              </div>
+            )}
           </div>
-        )}
-        <div className="analytics-row">
-          <span className="analytics-label">Intent</span>
-          <span className="analytics-value">{fmt(a.intent)}</span>
         </div>
-        <div className="analytics-row">
-          <span className="analytics-label">Qualification</span>
-          <span className={pillClass("qualification", a.qualification_status)}>
-            {fmt(a.qualification_status, "Unknown")}
-          </span>
-        </div>
-
-        <button className="btn ghost full-width" onClick={onStartNew}>
-          Start a new conversation
-        </button>
       </div>
     </div>
   );

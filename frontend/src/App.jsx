@@ -378,14 +378,7 @@ export default function App() {
       )}
 
       {showAnalyticsModal && analytics && (
-        <AnalyticsModal
-          analytics={analytics}
-          onClose={() => setShowAnalyticsModal(false)}
-          onStartNew={() => {
-            setShowAnalyticsModal(false);
-            startNewConversation();
-          }}
-        />
+        <AnalyticsModal analytics={analytics} onClose={() => setShowAnalyticsModal(false)} />
       )}
     </div>
   );

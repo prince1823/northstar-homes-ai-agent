@@ -41,8 +41,18 @@ export default function Sidebar({
       </button>
       <div className="sidebar-scroll">
         {/* 1. Project */}
-        <div className="side-section">
-          <div className="side-section-title">Northstar Homes</div>
+        <div className="side-section side-section-accent">
+          <div className="side-section-title">
+            <svg width="13" height="13" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path
+                d="M3 8.5 10 3l7 5.5V16a1 1 0 0 1-1 1h-3.5v-5h-5v5H4a1 1 0 0 1-1-1V8.5Z"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinejoin="round"
+              />
+            </svg>
+            Northstar Homes
+          </div>
           <div className="side-row">
             <span className="side-row-label">Project</span>
             <span className="side-row-value">Northstar One</span>
@@ -55,7 +65,17 @@ export default function Sidebar({
 
         {/* 2. Conversations */}
         <div className="side-section side-section-grow">
-          <div className="side-section-title">Conversations</div>
+          <div className="side-section-title">
+            <svg width="13" height="13" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path
+                d="M3 4.5h14a1 1 0 0 1 1 1V13a1 1 0 0 1-1 1H8l-3.5 3V14H3a1 1 0 0 1-1-1V5.5a1 1 0 0 1 1-1Z"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinejoin="round"
+              />
+            </svg>
+            Conversations
+          </div>
           <button className="btn primary full-width small-btn" onClick={onNewChat}>
             + New Chat
           </button>
