@@ -13,7 +13,7 @@ from . import sessions
 from .analytics import generate_analytics
 from .booking import attempt_booking
 from .llm import LLMError, chat_completion
-from .prompt import BOOKING_TOOL_NOTE, SYSTEM_PROMPT, current_date_note
+from .prompt import BOOKING_TOOL_NOTE, SYSTEM_PROMPT, TITLE_PROMPT, current_date_note
 
 app = FastAPI(title="Northstar Homes AI Sales Agent")
 
@@ -74,6 +74,18 @@ class AnalyticsRequest(BaseModel):
 class AnalyticsResponse(BaseModel):
     session_id: str
     analytics: dict
+
+
+class TitleRequest(BaseModel):
+    api_key: str | None = None
+    model: str | None = None
+    history: list[dict] | None = None  # client-cached history, used to rehydrate
+    # a session the backend has lost (e.g. after a restart) — same mechanism
+    # as ChatRequest.history, ignored if the server already has history.
+
+
+class TitleResponse(BaseModel):
+    title: str
 
 
 class SessionSummary(BaseModel):
@@ -271,6 +283,33 @@ async def end_conversation(session_id: str, req: AnalyticsRequest = AnalyticsReq
             raise HTTPException(502, str(exc)) from exc
 
     return AnalyticsResponse(session_id=session_id, analytics=analytics)
+
+
+@app.post("/title/{session_id}", response_model=TitleResponse)
+async def generate_title(session_id: str, req: TitleRequest = TitleRequest()):
+    """A short, one-time title generated once there's enough conversation.
+
+    Meant to be called once per conversation, after the customer's 3rd
+    message, and cached client-side from then on — not regenerated on later
+    turns, so it adds at most one extra LLM call per conversation rather than
+    one per message.
+    """
+    session = sessions.get_or_create(session_id)
+    if not session.history and req.history:
+        session.history = list(req.history)
+
+    if not session.history:
+        return TitleResponse(title="New conversation")
+
+    messages = [{"role": "system", "content": TITLE_PROMPT}] + session.history
+    try:
+        raw_title = await chat_completion(messages, temperature=0.4, max_tokens=20, api_key=req.api_key, model=req.model)
+    except LLMError as exc:
+        raise HTTPException(502, str(exc)) from exc
+
+    title = raw_title.strip().strip('"').strip("'").strip()
+    session.title = title[:60]
+    return TitleResponse(title=session.title)
 
 
 @app.get("/session/{session_id}")

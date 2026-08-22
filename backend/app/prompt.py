@@ -377,3 +377,16 @@ preference. If the customer has sent even one message, you can always
 determine this field from it; only use "not_discussed" if they haven't sent
 any message yet.
 """
+
+TITLE_PROMPT = """You name chat conversations for a real-estate sales assistant's sidebar, the
+same way ChatGPT titles a conversation from its opening messages.
+
+Read the conversation so far and output ONLY a short title, 3 to 6 words, in
+plain text — no quotation marks, no trailing period, no emoji, no prefix like
+"Title:". Base it on the customer's actual intent (e.g. configuration
+interest, a price question, an objection, a site-visit request, a callback
+request) rather than a generic phrase like "Real estate inquiry". Match the
+language style of the conversation (English, Hindi, or Hinglish) if it
+naturally fits into a short title; otherwise default to a short English
+title.
+"""

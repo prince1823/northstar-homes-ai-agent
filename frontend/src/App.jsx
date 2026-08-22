@@ -136,10 +136,44 @@ export default function App() {
 
   function persistMessages(id, msgs, endedFlag) {
     saveHistory(id, msgs);
-    const firstUser = msgs.find((m) => m.role === "user");
-    const title = firstUser ? firstUser.content.slice(0, 60) : "New conversation";
-    const list = upsertConversation({ id, title, updatedAt: Date.now(), ended: endedFlag });
+    const entry = { id, updatedAt: Date.now(), ended: endedFlag };
+    const existing = conversations.find((c) => c.id === id);
+    if (!existing?.title) {
+      // Fallback title until the one-time /title call (see generateTitle)
+      // resolves; never recomputed on later turns so it doesn't clobber a
+      // generated title.
+      const firstUser = msgs.find((m) => m.role === "user");
+      entry.title = firstUser ? firstUser.content.slice(0, 60) : "New conversation";
+    }
+    const list = upsertConversation(entry);
     setConversations(list);
+  }
+
+  async function generateTitle(id, msgs) {
+    // Best-effort, one-time-per-conversation title upgrade — runs once, after
+    // the customer's 3rd message (by then there's enough context for a good
+    // title), so it adds at most one extra LLM call per conversation, not one
+    // per turn. Silently keeps the truncated fallback title from
+    // persistMessages if this fails.
+    try {
+      const res = await fetch(`${API_URL}/title/${id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          history: msgs,
+          api_key: settings.apiKey || undefined,
+          model: settings.model || undefined,
+        }),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.title) {
+        const list = upsertConversation({ id, title: data.title });
+        setConversations(list);
+      }
+    } catch {
+      // ignore — fallback title stays
+    }
   }
 
   function persistAnalyticsCache(id, result) {
@@ -182,7 +216,11 @@ export default function App() {
       await typeOutMessage(data.reply);
 
       const finalMessages = [...newMessages, { role: "assistant", content: data.reply }];
+      const userMessageCount = newMessages.filter((m) => m.role === "user").length;
       persistMessages(currentId, finalMessages, false);
+      if (userMessageCount === 3) {
+        generateTitle(currentId, finalMessages);
+      }
     } catch (err) {
       setError(err.message);
       setLoading(false);

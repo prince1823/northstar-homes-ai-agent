@@ -14,7 +14,7 @@ Engineer assignment.
 huvo/
 ├── backend/            # FastAPI app
 │   ├── app/
-│   │   ├── main.py       # API routes: /chat, /end/{id}, /session/{id}, /sessions
+│   │   ├── main.py       # API routes: /chat, /end/{id}, /title/{id}, /session/{id}, /sessions
 │   │   ├── prompt.py     # the final system prompt + analytics schema (source of truth)
 │   │   ├── llm.py        # OpenRouter client (supports per-request BYO key/model)
 │   │   ├── sessions.py   # in-memory conversation store
@@ -111,6 +111,13 @@ key and pick a model, instead of relying on the server's `.env` default — see
   per exchange; that was replaced with this single end-of-conversation popup,
   both for cost and because it matches the assignment's literal spec more
   closely.
+- Sidebar conversation titles start as a truncated copy of the customer's
+  first message, then are upgraded once — after their 3rd message, once
+  there's enough context — via `POST /title/{session_id}`, a short LLM call
+  (`app/prompt.py`'s `TITLE_PROMPT`) that produces a real title like "Site
+  visit request for 3BHK" instead of the raw text. Like the analytics pass,
+  this runs exactly once per conversation and is cached client-side, not
+  regenerated on later turns.
 - The frontend keeps a per-browser conversation history in `localStorage`
   (`frontend/src/lib/storage.js`) — a **"+ New Chat"** creates a fresh session,
   and switching to a previous one restores its messages and (if the
