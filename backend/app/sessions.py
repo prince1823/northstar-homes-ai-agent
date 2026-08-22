@@ -14,6 +14,7 @@ class Session:
     history: list[dict] = field(default_factory=list)  # [{role, content}, ...]
     ended: bool = False
     booking: dict | None = None  # last booking attempt/result, if any
+    stall_pending: bool = False  # model said "let me check/confirm" without a tag
     title: str | None = None
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)

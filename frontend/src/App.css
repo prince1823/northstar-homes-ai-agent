@@ -14,7 +14,7 @@
   --text: #1a2233;
   --text-muted: #6b7386;
   --radius: 14px;
-  --content-width: 760px;
+  --content-width: 980px;
 }
 
 .app {
@@ -93,6 +93,17 @@
   font-weight: 600;
   text-align: right;
   overflow-wrap: anywhere;
+}
+
+.side-row.stacked {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.side-row-value.wrap {
+  text-align: left;
+  width: 100%;
 }
 
 .side-summary {
@@ -184,6 +195,9 @@
 }
 
 .conversation-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   text-align: left;
   background: transparent;
   border: none;
@@ -202,12 +216,39 @@
   background: rgba(79, 107, 255, 0.25);
 }
 
+.conversation-item-main {
+  flex: 1;
+  min-width: 0;
+}
+
 .conversation-item-title {
   font-size: 0.82rem;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.conversation-item-delete {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.conversation-item:hover .conversation-item-delete {
+  opacity: 1;
+}
+
+.conversation-item-delete:hover {
+  color: #ff8f87;
+  background: rgba(179, 38, 30, 0.2);
 }
 
 .conversation-item-meta {

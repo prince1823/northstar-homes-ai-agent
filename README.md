@@ -76,12 +76,23 @@ key and pick a model, instead of relying on the server's `.env` default — see
 - `POST /chat` sends the full conversation history plus the system prompt
   (`app/prompt.py`) to the LLM on every turn, so the model always has full
   context (memory is just "replay the transcript" — simple by design).
-- When the model decides a site visit should be booked, it emits an invisible
-  tag (`[[BOOK_VISIT: date=... time=... configuration=...]]`) in its reply. The
-  backend parses this, runs a simulated booking (`app/booking.py`, ~20% random
-  failure rate to exercise the failure-handling behavior), feeds the result
-  back to the model as a system note, and the model relays the outcome to the
-  customer naturally in the same turn — success or failure.
+- When the model has an explicit date, time, and configuration confirmed with
+  the customer, it emits an invisible tag
+  (`[[BOOK_VISIT: date=... time=... configuration=...]]`) in its reply. The
+  backend parses this, resolves any relative date ("this Sunday") against a
+  request-time IST date note injected into the prompt, runs a simulated
+  booking (`app/booking.py`, ~20% random failure rate to exercise the
+  failure-handling behavior), feeds the result back to the model as a system
+  note, and the model relays the outcome to the customer naturally in the same
+  turn — success or failure.
+- If a booking attempt fails and the customer gives a new date/time, the
+  backend injects a fresh, request-time reminder (`_pending_retry_note` in
+  `main.py`) telling the model it must emit a new tag for the retry. This
+  exists because prose in the static system prompt alone wasn't reliably
+  enough — in testing, the model would sometimes just say "let me lock that
+  in" on a retry without ever re-invoking the tag, silently leaving the
+  booking stuck. The reminder is scoped to the session's actual last-attempt
+  outcome, so it only fires while a failure is genuinely unresolved.
 - `POST /snapshot/{session_id}` runs a lightweight analytics pass over the
   conversation **so far** (without ending it), used to keep the sidebar's lead
   info, site-visit, follow-up, and analytics panels updating live after every
@@ -118,9 +129,16 @@ server-side. If left empty, the backend falls back to `OPENROUTER_API_KEY` /
 - No real CRM, calendar, or booking system exists — site visits are simulated
   in-process with a fixed random failure rate, not connected to any real
   scheduling backend.
-- No real project data beyond what's given in the assignment (project name,
-  location, configurations, starting prices) — the prompt explicitly refuses
-  to invent anything beyond that (discounts, possession dates, amenities, etc.)
+- Beyond the core facts given in the assignment (project name, location,
+  configurations, starting prices), the prompt defines a small, fixed fact
+  sheet for Northstar One — carpet area ranges, amenities, parking,
+  possession timeline, approximate maintenance charge — the way any real
+  listing brochure would, so the agent can answer basic spec questions
+  directly instead of deflecting everything to a specialist. This is
+  authored once as fixed ground truth, not improvised per-conversation.
+  Discounts, negotiability, exact floor/unit-level pricing and availability,
+  and legal/RERA specifics are deliberately left out and always escalated —
+  the prompt explicitly refuses to invent those.
 - Sessions are stored in-memory only (a Python dict), per the "keep it simple"
   instruction in the assignment. Restarting the backend clears server-side
   session state, though the frontend's `localStorage` cache plus the

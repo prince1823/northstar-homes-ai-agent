@@ -7,6 +7,7 @@ import {
   loadHistory,
   saveHistory,
   upsertConversation,
+  deleteConversation,
   loadSettings,
   saveSettings,
 } from "./lib/storage";
@@ -52,25 +53,54 @@ export default function App() {
     return existing.find((c) => c.id === currentId)?.ended || false;
   });
   const [error, setError] = useState(null);
+  const [welcomeText, setWelcomeText] = useState("");
 
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
   const typingTimerRef = useRef(null);
+  const welcomeTimerRef = useRef(null);
 
   const busy = loading || streaming;
-  const displayMessages = messages.length > 0 ? messages : [WELCOME];
+  const welcomeBubble = {
+    role: "assistant",
+    content: messages.length === 0 ? welcomeText : WELCOME.content,
+  };
+  const displayMessages = [welcomeBubble, ...messages];
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading]);
+  }, [messages, loading, welcomeText]);
 
   useEffect(() => {
-    inputRef.current?.focus();
-  }, [ended, currentId]);
+    if (!busy && !ended) {
+      inputRef.current?.focus();
+    }
+  }, [ended, currentId, busy]);
 
   useEffect(() => {
-    return () => clearInterval(typingTimerRef.current);
+    if (messages.length === 0) {
+      typeOutWelcome();
+    }
+    return () => {
+      clearInterval(typingTimerRef.current);
+      clearInterval(welcomeTimerRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function typeOutWelcome() {
+    clearInterval(welcomeTimerRef.current);
+    setWelcomeText("");
+    const words = WELCOME.content.split(/(\s+)/);
+    let i = 0;
+    welcomeTimerRef.current = setInterval(() => {
+      i++;
+      setWelcomeText(words.slice(0, i).join(""));
+      if (i >= words.length) {
+        clearInterval(welcomeTimerRef.current);
+      }
+    }, TYPE_WORD_DELAY_MS);
+  }
 
   function typeOutMessage(fullText) {
     return new Promise((resolve) => {
@@ -116,13 +146,14 @@ export default function App() {
     setConversations(list);
   }
 
-  async function refreshSnapshot(id) {
+  async function refreshSnapshot(id, history) {
     setSnapshotLoading(true);
     try {
       const res = await fetch(`${API_URL}/snapshot/${id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          history,
           api_key: settings.apiKey || undefined,
           model: settings.model || undefined,
         }),
@@ -177,7 +208,7 @@ export default function App() {
         setBooking(data.booking);
         persistBookingCache(currentId, data.booking);
       }
-      refreshSnapshot(currentId);
+      refreshSnapshot(currentId, finalMessages);
     } catch (err) {
       setError(err.message);
       setLoading(false);
@@ -193,6 +224,7 @@ export default function App() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          history: messages,
           api_key: settings.apiKey || undefined,
           model: settings.model || undefined,
         }),
@@ -222,6 +254,7 @@ export default function App() {
     setSnapshot(null);
     setBooking(null);
     setError(null);
+    typeOutWelcome();
   }
 
   function selectConversation(id) {
@@ -237,8 +270,34 @@ export default function App() {
     setBooking(conv?.booking || null);
     setError(null);
     if (!conv?.ended && hist.length > 0) {
-      refreshSnapshot(id);
+      refreshSnapshot(id, hist);
     }
+  }
+
+  function handleDeleteConversation(id) {
+    const list = deleteConversation(id);
+    setConversations(list);
+
+    if (id !== currentId) return;
+
+    clearInterval(typingTimerRef.current);
+    setStreaming(false);
+    if (list.length > 0) {
+      const next = list[0];
+      setCurrentId(next.id);
+      setMessages(loadHistory(next.id));
+      setEnded(next.ended || false);
+      setSnapshot(next.snapshot || null);
+      setBooking(next.booking || null);
+    } else {
+      setCurrentId(uuid());
+      setMessages([]);
+      setEnded(false);
+      setSnapshot(null);
+      setBooking(null);
+      typeOutWelcome();
+    }
+    setError(null);
   }
 
   function handleSaveSettings(newSettings) {
@@ -252,6 +311,7 @@ export default function App() {
         conversations={conversations}
         currentId={currentId}
         onSelectConversation={selectConversation}
+        onDeleteConversation={handleDeleteConversation}
         onNewChat={startNewConversation}
         snapshot={snapshot}
         booking={booking}
@@ -262,9 +322,9 @@ export default function App() {
       <main className="main">
         <header className="chat-header">
           <div className="chat-header-left">
-            <div className="avatar assistant-avatar">H</div>
+            <div className="avatar assistant-avatar">R</div>
             <div>
-              <div className="chat-header-title">Huvo Agent</div>
+              <div className="chat-header-title">Riya</div>
               <div className="chat-header-subtitle">Northstar Homes</div>
             </div>
           </div>
@@ -283,9 +343,9 @@ export default function App() {
           <div className="chat-window-inner">
             {displayMessages.map((m, i) => (
               <div key={i} className={`bubble-row ${m.role}`}>
-                {m.role === "assistant" && <div className="avatar assistant-avatar small">H</div>}
+                {m.role === "assistant" && <div className="avatar assistant-avatar small">R</div>}
                 <div className={`bubble ${m.role}`}>{m.content}</div>
-                {m.role === "user" && <div className="avatar user-avatar small">You</div>}
+                {m.role === "user"}
               </div>
             ))}
             {loading && (
@@ -311,6 +371,12 @@ export default function App() {
               placeholder={ended ? "Conversation ended" : "Type a message… English, Hindi, or Hinglish"}
               value={input}
               onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  sendMessage(e);
+                }
+              }}
               disabled={ended || busy}
             />
             <button className="btn primary send-btn" type="submit" disabled={ended || busy || !input.trim()}>

@@ -371,6 +371,262 @@ actual booked slot.
 
 ---
 
+## 14. Retry-after-failure: redundant re-confirmation + silent non-attempt (regression test)
+
+A user-reported bug from a real multi-turn conversation: (1) after a failed
+booking attempt, asking for a new time made the agent re-ask "which
+configuration?" even though it was already confirmed earlier and hadn't
+changed; (2) worse, the retry's reply *claimed* success ("Aapka site visit...
+hai... Team aapko confirmation bhejegi") but never actually re-invoked the
+booking tool — investigation (via temporary raw-output logging) showed the
+retry's raw model output had no `[[BOOK_VISIT: ...]]` tag at all, so the
+backend never attempted a real booking, and the sidebar stayed frozen on the
+previous failed attempt's stale date/time.
+
+Two fixes: the prompt now explicitly says not to re-ask for information
+already confirmed earlier (only ask what's new), and — since prose alone in
+the system prompt wasn't reliably enough to get retries to re-emit the tag —
+the backend (`_pending_retry_note` in `main.py`) now injects a fresh,
+request-time system reminder whenever the session's last booking attempt
+failed, explicitly telling the model it must include a tag in *this* reply if
+it now has all three fields confirmed.
+
+Re-tested with a deterministic test hook (first booking attempt always fails,
+second always succeeds — swapped in temporarily instead of the random ~20%
+rate, so the retry path is exercised reliably) across one continuous
+conversation (no backend restarts, so session state — critically,
+`session.booking` — persists across retries, which is what the fix depends
+on):
+
+1. `"2 BHK dekhna hai Monday shaam 6 baje"` → agent asks to confirm the
+   resolved date ("24 August, Monday").
+2. `"haan"` → attempt #1: **fails** (by design of the test hook). Sidebar:
+   `Status: Failed, Date: 24 August, Time: 18:00`.
+3. `"dopahar 2 baje kar dijiye"` (new time only — configuration not repeated)
+   → agent does **not** re-ask which configuration; replies "Let me lock that
+   in for you," and this time genuinely re-emits the tag. Attempt #2:
+   **succeeds**. Sidebar updates to `Status: Booked, Date: 24 August, Time:
+   14:00`.
+
+**Result:** ✅ No redundant configuration question on retry; a fresh, real
+booking attempt (not a hallucinated claim) on every retry; sidebar reflects
+the latest attempt's actual outcome rather than staying stuck on stale data.
+
+---
+
+## 15. Budget-before-price sales flow
+
+A requested change: like a proper sales agent, the bot should ask the
+customer's budget *before* volunteering the starting price (rather than
+leading with the number), except when the customer directly asks for the
+price — that should always be answered immediately, never deflected.
+
+**Scenario A — agent-led flow (session `budget-test-1`):**
+1. `"Hi, mujhe Sector 79 wale project ke baare mein pata chala tha, thoda batao?"`
+   → introduces the project (name, location, configs) without volunteering
+   prices yet.
+2. `"2 BHK dekh raha hoon"` →
+   > "That's great! Aapka budget range kya soch rahe hain 2 BHK ke liye?"
+
+   **Result:** ✅ Asks budget before price.
+3. `"around 1.5 crore tak soch rahe hain"` →
+   > "Aapke budget se accha fit hai — 2 BHK ka starting price ₹1.35 crore se
+   > hai. Kya aapko site visit ke liye koi specific date aur time chahiye?"
+
+   **Result:** ✅ Price revealed only after budget known, framed positively
+   against it, with the exact correct number (no invented discount/figure).
+
+**Scenario B — direct price question (session `budget-test-2`):**
+
+**Input:** `"2 BHK ka price kya hai?"`
+
+**Expected behavior:** Answer immediately — never dodge a direct question by
+asking for budget first instead.
+
+**Actual output:**
+> "2 BHK ka starting price ₹1.35 crore se shuru hota hai. Aapka budget range
+> kya soch rahe hain is property ke liye?"
+
+**Result:** ✅ Answered the direct question first, then naturally followed up
+asking budget — correct per the stated exception.
+
+---
+
+## 16. Asking for the customer's name early
+
+A user-reported gap: the Lead Information sidebar always showed "Name: —"
+because the agent only ever picked up a name if the customer happened to
+volunteer it unprompted — it never proactively asked, unlike a real
+salesperson. Prose alone (even with explicit priority language over the
+budget-follow-up rule) wasn't reliably enough to change this in testing — the
+model kept defaulting to budget/configuration questions instead. Fixed the
+same way as the booking-retry issue: a fresh, request-time reminder
+(`_pending_name_note` in `main.py`) injected for the first few exchanges,
+telling the model to check whether it already knows the name and, if not, ask
+for it before any other qualifying question.
+
+**Scenario A — name asked and used (session `name-test-5`):**
+1. `"Hi, mujhe 3 BHK dekhna hai"` →
+   > "Hi! Aapka naam kya hai? Aur aapko kis din aur kis time par 3 BHK dekhna
+   > hai?"
+
+   **Result:** ✅ Asks for the name in the very first substantive reply.
+2. `"Mera naam Priya hai"` →
+   > "Nice to meet you, Priya! Aapko kis din aur kis time par 3 BHK dekhna
+   > hai?"
+
+   **Result:** ✅ Name acknowledged and used naturally, conversation
+   continues. `POST /snapshot` correctly returned `"lead_name": "Priya"`.
+
+**Scenario B — name-ask doesn't override higher-priority rules (session
+`name-test-6`):**
+1. `"Hi, tell me about the project"` → normal intro reply.
+2. `"please remove my number, not interested"` →
+   > "I understand, and I'm sorry for the intrusion. I won't contact you
+   > again. Thank you for your time!"
+
+   **Result:** ✅ DND opt-out still correctly overrides the name-ask reminder
+   — no name question sneaks in when the customer wants to disengage.
+
+---
+
+## 17. Rescheduling an already-booked visit (stall loop regression test)
+
+A user-reported bug, live in the UI: after a visit was already successfully
+booked, asking to reschedule it sent the agent into an infinite loop — every
+reply said "let me check availability" / "let me lock that in" / "just a
+moment," but the visit was never actually rebooked, no matter how many times
+the customer repeated or clarified the request (even a confused "?" didn't
+break the loop). The existing failure-retry reminder (`_pending_retry_note`)
+didn't cover this because it only fires when the *last attempt failed* — here
+the last attempt had *succeeded*, so there was no failure to key off, and the
+model simply never re-invoked the booking tag for the new date/time.
+
+Fixed with `_pending_stall_note` in `main.py`: a `STALL_PATTERN` regex
+detects when a reply contains stalling language ("let me check/confirm/lock
+that in," "thodi der," "ek second," etc.) without an actual `[[BOOK_VISIT:
+...]]` tag, sets `session.stall_pending`, and injects a fresh reminder on the
+next turn telling the model it must include the tag this time — explicitly
+covering the reschedule-after-success case.
+
+Reproduced with a deterministic forced-success test hook (session
+`reschedule-test-1`):
+1. `"3 BHK dekhna hai Sunday 11am"` → asks for name first (per the
+   name-priority rule), then confirms and books successfully once given:
+   `{"date": "23 August", "time": "11 AM", "success": true}`.
+2. `"Actually, book it for tomorrow at 5 PM instead."` →
+   > "Kal aapka site visit book karne ke liye main request dal rahi hoon: 24
+   > August ko 5 baje 3 BHK dekhne ke liye. Thodi der mein confirm kar deti
+   > hoon."
+
+   `booking: null` — the stall, reproduced. `session.stall_pending` set.
+3. `"What is my site visit status?"` (the reminder is now active) →
+   > "Sorry for the confusion, Indu! Main aapka site visit ab book kar rahi
+   > hoon: 24 August ko 5 baje 3 BHK dekhne ke liye. Thodi der mein confirm
+   > kar deti hoon.
+   >
+   > Indu, aapka site visit kal, 24 August ko 5 baje 3 BHK dekhne ke liye
+   > confirm ho gaya hai!"
+
+   `booking: {"date": "24 August", "time": "17:00", "success": true}` — the
+   loop breaks; a real tag is emitted and the reschedule succeeds.
+
+**Result:** ✅ No more infinite stall loop; `POST /snapshot` confirmed
+`site_visit_date: "24 August"`, `site_visit_time: "5 PM"` reflecting the
+rescheduled slot, not the stale original booking.
+
+---
+
+## 18. No repeated "just to confirm" question after the customer already said yes
+
+A user-reported bug, live in the UI: the agent asked "Just to confirm, you
+want to schedule the site visit for the 3 BHK on 23 August, tomorrow, at 5
+PM. Let me lock that in for you." — the customer replied "yes" — and the
+*next* reply, right before finally booking, opened with the exact same "Just
+to confirm, you want to visit the 3 BHK on 23 August, tomorrow, at 5 PM. Let
+me lock that in for you." again, making it look like the "yes" hadn't
+registered. Root cause: the SITE-VISIT BOOKING guidance told the model to
+keep its pre-tag reply "provisional," but didn't say the confirmation
+question itself should only be asked once — so the model re-derived a fresh
+"just to confirm...?" every time it was about to emit the tag, regardless of
+whether that exact confirmation had already been given. Fixed by adding an
+explicit rule: once the customer has replied affirmatively to a confirmation
+question, that reply is final — proceed to book with a brief acknowledgment
+("Great, let me lock that in for you") rather than restating the question.
+
+Re-tested (session `confirm-repeat-test2`):
+1. `"Hi, mera naam Aditi hai"` → name captured.
+2. `"3 BHK dekhna hai kal shaam 5 baje"` →
+   > "Kal shaam 5 baje 3 BHK dekhne ka plan hai. Mujhe bas yeh confirm karna
+   > hai ki aapko yeh visit book karne se pehle koi aur detail chahiye?"
+
+   (a confirmation-style question, no tag yet — `booking: null`)
+3. `"nahi, book kar do"` →
+   > "Great, let me lock that in for you.
+   >
+   > Aditi, aapka visit kal, 23 August ko shaam 5 baje 3 BHK ke liye book ho
+   > gaya hai. Dhanyawaad!"
+
+   **Result:** ✅ No repeated "just to confirm" restating the date/time —
+   just a brief acknowledgment before the real outcome. `booking.success:
+   true`.
+
+---
+
+## 19. Expanded project fact sheet — basic specs vs. genuinely unknown info
+
+A user-reported gap: the agent was deflecting *every* spec question (carpet
+area, maintenance charge, possession date, parking, amenities) to "I'll
+connect you with a specialist" — which is unrealistic. A real listing always
+has these basic facts on hand; only things like discounts, negotiability, and
+exact unit-level pricing/availability genuinely require a human. Fixed by
+expanding THE PROJECT section in the prompt with a small, fixed fact sheet
+(carpet area ranges, amenities, parking, possession date, approximate
+maintenance charge) that the agent can state directly and confidently — the
+same way it already does for price — while explicitly keeping discounts,
+negotiability, exact floor/unit pricing, and RERA/legal specifics out of
+reach (never invented, always escalated).
+
+**Input:** `"What is the exact carpet area, maintenance charge, possession
+date, and number of parking spaces?"`
+
+**Actual output:**
+> "I can help with that! The carpet area for a 2 BHK is approximately 950 to
+> 1000 square feet, while the 3 BHK is around 1350 to 1450 square feet. The
+> maintenance charges are expected to be around ₹3.5 per square foot per
+> month, and possession is anticipated by December 2028. Each unit comes
+> with one covered parking slot included."
+
+**Result:** ✅ All four answered directly and confidently — no more
+unnecessary specialist deflection for basic specs.
+
+**Input:** `"My friend told me Northstar One has a swimming pool, gym, and
+20% launch discount. Confirm all three for me."`
+
+**Actual output:**
+> "Yes, Northstar One does have a swimming pool and a fully-equipped gym,
+> along with other great amenities like a clubhouse and landscaped gardens.
+> However, I can't confirm any launch discount, as I don't have that
+> information."
+
+**Result:** ✅ Amenities confirmed directly; the discount — never part of the
+given facts — correctly declined rather than invented, exactly matching the
+assignment's "never invent discounts" requirement even with the expanded
+fact sheet.
+
+**Input:** `"Can I get a 10% discount, and is the price negotiable? Also
+what floor is available on the 3 BHK?"`
+
+**Actual output:**
+> "I don't have information on discounts or pricing negotiations for the
+> project. As for the floor availability of the 3 BHK, I would need to
+> connect you with a specialist who can provide those details."
+
+**Result:** ✅ Genuinely unknown info (discount, negotiability, floor-level
+availability) still correctly escalates rather than being answered.
+
+---
+
 ## Summary
 
 | # | Scenario | Result |
@@ -388,6 +644,12 @@ actual booked slot.
 | 11 | Full UI end-to-end flow | ✅ |
 | 12 | Partial date/time regression fix | ✅ |
 | 13 | Language slip + relative-date resolution fix | ✅ |
+| 14 | Retry-after-failure: redundant re-ask + silent non-attempt fix | ✅ |
+| 15 | Budget-before-price sales flow | ✅ |
+| 16 | Ask for customer's name early | ✅ |
+| 17 | Reschedule-after-success stall loop fix | ✅ |
+| 18 | No repeated "just to confirm" after a yes | ✅ |
+| 19 | Expanded project facts (basic specs vs. escalate) | ✅ |
 
 > Note: LLM outputs are non-deterministic — exact wording will vary slightly
 > between runs, but behavior stays consistent with the prompt's rules across

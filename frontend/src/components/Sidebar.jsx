@@ -51,6 +51,7 @@ export default function Sidebar({
   conversations,
   currentId,
   onSelectConversation,
+  onDeleteConversation,
   onNewChat,
   snapshot,
   booking,
@@ -75,12 +76,29 @@ export default function Sidebar({
   const visitDate = booking?.date || s.site_visit_date;
   const visitTime = booking?.time || s.site_visit_time;
 
+  // preferred_language is the model's own judgment call and occasionally
+  // comes back "not_discussed" even when language_used (a simpler, more
+  // reliable extraction) shows what was actually used — fall back to that.
+  const language =
+    s.preferred_language && s.preferred_language !== "not_discussed"
+      ? s.preferred_language
+      : Array.isArray(s.language_used) && s.language_used.length > 0
+        ? s.language_used.join(", ")
+        : null;
+
+  function handleDelete(e, id) {
+    e.stopPropagation();
+    if (window.confirm("Delete this conversation? This can't be undone.")) {
+      onDeleteConversation(id);
+    }
+  }
+
   return (
     <aside className="sidebar">
       <div className="sidebar-scroll">
         {/* 1. Project */}
         <div className="side-section">
-          <div className="side-section-title">🏠 Northstar Homes</div>
+          <div className="side-section-title">Northstar Homes</div>
           <div className="side-row">
             <span className="side-row-label">Project</span>
             <span className="side-row-value">Northstar One</span>
@@ -93,7 +111,7 @@ export default function Sidebar({
 
         {/* 2. Conversations */}
         <div className="side-section">
-          <div className="side-section-title">💬 Conversations</div>
+          <div className="side-section-title">Conversations</div>
           <button className="btn primary full-width small-btn" onClick={onNewChat}>
             + New Chat
           </button>
@@ -107,16 +125,28 @@ export default function Sidebar({
           <div className="conversation-list">
             {filtered.length === 0 && <div className="side-empty">No conversations yet</div>}
             {filtered.map((c) => (
-              <button
+              <div
                 key={c.id}
                 className={`conversation-item ${c.id === currentId ? "active" : ""}`}
                 onClick={() => onSelectConversation(c.id)}
+                role="button"
+                tabIndex={0}
               >
-                <div className="conversation-item-title">{c.title || "New conversation"}</div>
-                <div className="conversation-item-meta">
-                  {c.ended ? "Ended" : "Active"} · {relativeTime(c.updatedAt)}
+                <div className="conversation-item-main">
+                  <div className="conversation-item-title">{c.title || "New conversation"}</div>
+                  <div className="conversation-item-meta">
+                    {c.ended ? "Ended" : "Active"} · {relativeTime(c.updatedAt)}
+                  </div>
                 </div>
-              </button>
+                <button
+                  className="conversation-item-delete"
+                  onClick={(e) => handleDelete(e, c.id)}
+                  aria-label="Delete conversation"
+                  title="Delete conversation"
+                >
+                  🗑
+                </button>
+              </div>
             ))}
           </div>
         </div>
@@ -124,15 +154,11 @@ export default function Sidebar({
         {/* 3. Lead Information */}
         <div className="side-section">
           <div className="side-section-title">
-            👤 Lead Information {snapshotLoading && <span className="side-loading">updating…</span>}
+            Lead Information {snapshotLoading && <span className="side-loading">updating…</span>}
           </div>
           <div className="side-row">
             <span className="side-row-label">Name</span>
             <span className="side-row-value">{fmt(s.lead_name)}</span>
-          </div>
-          <div className="side-row">
-            <span className="side-row-label">Budget</span>
-            <span className="side-row-value">{fmt(s.budget_signal, "Not discussed")}</span>
           </div>
           <div className="side-row">
             <span className="side-row-label">Configuration</span>
@@ -144,13 +170,17 @@ export default function Sidebar({
           </div>
           <div className="side-row">
             <span className="side-row-label">Language</span>
-            <span className="side-row-value">{fmt(s.preferred_language, "Not discussed")}</span>
+            <span className="side-row-value">{fmt(language, "Not discussed")}</span>
+          </div>
+          <div className="side-row stacked">
+            <span className="side-row-label">Budget</span>
+            <span className="side-row-value wrap">{fmt(s.budget_signal, "Not discussed")}</span>
           </div>
         </div>
 
         {/* 4. Site Visit */}
         <div className="side-section">
-          <div className="side-section-title">📅 Site Visit</div>
+          <div className="side-section-title">Site Visit</div>
           <div className="side-row">
             <span className="side-row-label">Status</span>
             <span className={siteVisitClass(visitStatus)}>{siteVisitLabel(visitStatus)}</span>
@@ -167,20 +197,20 @@ export default function Sidebar({
 
         {/* 5. Follow-up */}
         <div className="side-section">
-          <div className="side-section-title">🔔 Follow-up</div>
+          <div className="side-section-title">Follow-up</div>
           <div className="side-row">
             <span className="side-row-label">Required</span>
             <span className="side-row-value">{fmt(s.follow_up_required, "No")}</span>
           </div>
-          <div className="side-row">
+          <div className="side-row stacked">
             <span className="side-row-label">Follow-up date</span>
-            <span className="side-row-value">{fmt(s.follow_up_date || s.follow_up_notes)}</span>
+            <span className="side-row-value wrap">{fmt(s.follow_up_date || s.follow_up_notes)}</span>
           </div>
         </div>
 
         {/* 6. Conversation Analytics */}
         <div className="side-section">
-          <div className="side-section-title">📊 Conversation Analytics</div>
+          <div className="side-section-title">Conversation Analytics</div>
           <div className="side-row">
             <span className="side-row-label">Lead score</span>
             <span className="side-row-value">{leadScore === null ? "—" : `${leadScore}/100`}</span>
@@ -193,9 +223,9 @@ export default function Sidebar({
               />
             </div>
           )}
-          <div className="side-row">
+          <div className="side-row stacked">
             <span className="side-row-label">Intent</span>
-            <span className="side-row-value">{fmt(s.intent)}</span>
+            <span className="side-row-value wrap">{fmt(s.intent)}</span>
           </div>
           <div className="side-row">
             <span className="side-row-label">Qualification</span>
@@ -211,7 +241,7 @@ export default function Sidebar({
 
       {/* 7. Settings */}
       <button className="settings-footer-btn" onClick={onOpenSettings}>
-        ⚙️ Settings
+        Settings
       </button>
     </aside>
   );

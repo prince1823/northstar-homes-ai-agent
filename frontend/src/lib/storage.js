@@ -30,6 +30,13 @@ export function upsertConversation(entry) {
   return list;
 }
 
+export function deleteConversation(id) {
+  const list = loadConversations().filter((c) => c.id !== id);
+  saveConversations(list);
+  localStorage.removeItem(HISTORY_PREFIX + id);
+  return list;
+}
+
 export function loadHistory(id) {
   try {
     const raw = localStorage.getItem(HISTORY_PREFIX + id);
