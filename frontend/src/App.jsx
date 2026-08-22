@@ -350,7 +350,7 @@ export default function App() {
           </div>
           <div className="chat-header-actions">
             <button
-              className="btn primary"
+              className="btn ghost compact"
               onClick={endConversation}
               disabled={ended || busy || !messages.some((m) => m.role === "user")}
             >
@@ -365,7 +365,7 @@ export default function App() {
               <div key={i} className={`bubble-row ${m.role}`}>
                 {m.role === "assistant" && <div className="avatar assistant-avatar small">R</div>}
                 <div className={`bubble ${m.role}`}>{m.content}</div>
-                {m.role === "user" && <div className="avatar user-avatar small">You</div>}
+                {m.role === "user" }
               </div>
             ))}
             {loading && (
@@ -388,7 +388,7 @@ export default function App() {
             <input
               ref={inputRef}
               type="text"
-              placeholder={ended ? "Conversation ended" : "Type a message… English, Hindi, or Hinglish"}
+              placeholder={ended ? "Conversation ended" : "Type a message..."}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {

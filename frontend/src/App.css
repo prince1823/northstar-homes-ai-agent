@@ -434,15 +434,26 @@
   border: 1px solid var(--border);
 }
 
-.btn.ghost:hover {
+.btn.ghost:hover:not(:disabled) {
   background: #f4f6fa;
   color: var(--text);
+}
+
+.btn.ghost:disabled {
+  color: #c3c8d3;
+  border-color: #e9ecf2;
+  cursor: not-allowed;
 }
 
 .btn.ghost.small {
   padding: 5px 10px;
   font-size: 0.75rem;
   margin-top: 8px;
+}
+
+.btn.ghost.compact {
+  padding: 6px 12px;
+  font-size: 0.78rem;
 }
 
 .btn.full-width {
