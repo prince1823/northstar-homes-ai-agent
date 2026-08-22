@@ -44,6 +44,9 @@ export default function App() {
   const [snapshotLoading, setSnapshotLoading] = useState(false);
   const [settings, setSettings] = useState(() => loadSettings());
   const [showSettings, setShowSettings] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => localStorage.getItem("huvo_sidebar_collapsed") === "true"
+  );
 
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -137,12 +140,15 @@ export default function App() {
   }
 
   function persistSnapshotCache(id, snap) {
-    const list = upsertConversation({ id, snapshot: snap, updatedAt: Date.now() });
+    // Deliberately doesn't touch updatedAt — this can be triggered just from
+    // viewing/reopening a conversation, not only from new activity, and the
+    // list's sort order should only move on real activity (persistMessages).
+    const list = upsertConversation({ id, snapshot: snap });
     setConversations(list);
   }
 
   function persistBookingCache(id, bookingResult) {
-    const list = upsertConversation({ id, booking: bookingResult, updatedAt: Date.now() });
+    const list = upsertConversation({ id, booking: bookingResult });
     setConversations(list);
   }
 
@@ -269,7 +275,11 @@ export default function App() {
     setSnapshot(conv?.snapshot || null);
     setBooking(conv?.booking || null);
     setError(null);
-    if (!conv?.ended && hist.length > 0) {
+    // Only fetch a fresh snapshot if we don't already have one cached — an
+    // already-cached snapshot for a past conversation is still accurate
+    // (nothing changed since we last saw it), so re-fetching on every open
+    // just causes a needless "updating…" flicker and API call.
+    if (!conv?.snapshot && !conv?.ended && hist.length > 0) {
       refreshSnapshot(id, hist);
     }
   }
@@ -305,6 +315,14 @@ export default function App() {
     saveSettings(newSettings);
   }
 
+  function toggleSidebar() {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem("huvo_sidebar_collapsed", String(next));
+      return next;
+    });
+  }
+
   return (
     <div className="app">
       <Sidebar
@@ -317,10 +335,12 @@ export default function App() {
         booking={booking}
         snapshotLoading={snapshotLoading}
         onOpenSettings={() => setShowSettings(true)}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={toggleSidebar}
       />
 
       <main className="main">
-        <header className="chat-header">
+        <header className={`chat-header ${sidebarCollapsed ? "with-sidebar-collapsed" : ""}`}>
           <div className="chat-header-left">
             <div className="avatar assistant-avatar">R</div>
             <div>
@@ -345,12 +365,12 @@ export default function App() {
               <div key={i} className={`bubble-row ${m.role}`}>
                 {m.role === "assistant" && <div className="avatar assistant-avatar small">R</div>}
                 <div className={`bubble ${m.role}`}>{m.content}</div>
-                {m.role === "user"}
+                {m.role === "user" && <div className="avatar user-avatar small">You</div>}
               </div>
             ))}
             {loading && (
               <div className="bubble-row assistant">
-                <div className="avatar assistant-avatar small">H</div>
+                <div className="avatar assistant-avatar small">R</div>
                 <div className="bubble assistant typing">
                   <span className="dot" />
                   <span className="dot" />
