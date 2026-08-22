@@ -23,7 +23,7 @@ export function upsertConversation(entry) {
   if (i >= 0) {
     list[i] = { ...list[i], ...entry };
   } else {
-    list.unshift({ ended: false, snapshot: null, updatedAt: Date.now(), ...entry });
+    list.unshift({ ended: false, analytics: null, updatedAt: Date.now(), ...entry });
   }
   list.sort((a, b) => b.updatedAt - a.updatedAt);
   saveConversations(list);

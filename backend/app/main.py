@@ -254,28 +254,6 @@ async def chat(req: ChatRequest):
     return ChatResponse(session_id=session_id, reply=visible_reply, booking=None)
 
 
-@app.post("/snapshot/{session_id}", response_model=AnalyticsResponse)
-async def snapshot(session_id: str, req: AnalyticsRequest = AnalyticsRequest()):
-    """Live analytics over the conversation so far, without ending it.
-
-    Used to keep the sidebar (lead info, site visit, follow-up, analytics)
-    updated turn-by-turn while the conversation is still ongoing.
-    """
-    session = sessions.get_or_create(session_id)
-    if not session.history and req.history:
-        session.history = list(req.history)
-
-    if not session.history:
-        return AnalyticsResponse(session_id=session_id, analytics={})
-
-    try:
-        analytics = await generate_analytics(session.history, req.api_key, req.model)
-    except LLMError as exc:
-        raise HTTPException(502, str(exc)) from exc
-
-    return AnalyticsResponse(session_id=session_id, analytics=analytics)
-
-
 @app.post("/end/{session_id}", response_model=AnalyticsResponse)
 async def end_conversation(session_id: str, req: AnalyticsRequest = AnalyticsRequest()):
     session = sessions.get_or_create(session_id)

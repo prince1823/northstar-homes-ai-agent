@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import "./App.css";
 import Sidebar from "./components/Sidebar";
 import SettingsModal from "./components/SettingsModal";
+import AnalyticsModal from "./components/AnalyticsModal";
 import {
   loadConversations,
   loadHistory,
@@ -33,15 +34,12 @@ export default function App() {
     return existing.length > 0 ? existing[0].id : uuid();
   });
   const [messages, setMessages] = useState(() => loadHistory(currentId));
-  const [snapshot, setSnapshot] = useState(() => {
+  // Final, end-of-conversation analytics only — no live per-turn LLM calls.
+  const [analytics, setAnalytics] = useState(() => {
     const existing = loadConversations();
-    return existing.find((c) => c.id === currentId)?.snapshot || null;
+    return existing.find((c) => c.id === currentId)?.analytics || null;
   });
-  const [booking, setBooking] = useState(() => {
-    const existing = loadConversations();
-    return existing.find((c) => c.id === currentId)?.booking || null;
-  });
-  const [snapshotLoading, setSnapshotLoading] = useState(false);
+  const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
   const [settings, setSettings] = useState(() => loadSettings());
   const [showSettings, setShowSettings] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
@@ -139,42 +137,12 @@ export default function App() {
     setConversations(list);
   }
 
-  function persistSnapshotCache(id, snap) {
-    // Deliberately doesn't touch updatedAt — this can be triggered just from
-    // viewing/reopening a conversation, not only from new activity, and the
-    // list's sort order should only move on real activity (persistMessages).
-    const list = upsertConversation({ id, snapshot: snap });
+  function persistAnalyticsCache(id, result) {
+    // Caches the one-time, end-of-conversation analytics result so reopening
+    // an ended conversation can show it again via "View analytics" without
+    // another LLM call. Deliberately doesn't touch updatedAt.
+    const list = upsertConversation({ id, analytics: result });
     setConversations(list);
-  }
-
-  function persistBookingCache(id, bookingResult) {
-    const list = upsertConversation({ id, booking: bookingResult });
-    setConversations(list);
-  }
-
-  async function refreshSnapshot(id, history) {
-    setSnapshotLoading(true);
-    try {
-      const res = await fetch(`${API_URL}/snapshot/${id}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          history,
-          api_key: settings.apiKey || undefined,
-          model: settings.model || undefined,
-        }),
-      });
-      if (!res.ok) return;
-      const data = await res.json();
-      if (data.analytics && Object.keys(data.analytics).length > 0) {
-        setSnapshot(data.analytics);
-        persistSnapshotCache(id, data.analytics);
-      }
-    } catch {
-      // best-effort background refresh — ignore failures
-    } finally {
-      setSnapshotLoading(false);
-    }
   }
 
   async function sendMessage(e) {
@@ -210,11 +178,6 @@ export default function App() {
 
       const finalMessages = [...newMessages, { role: "assistant", content: data.reply }];
       persistMessages(currentId, finalMessages, false);
-      if (data.booking) {
-        setBooking(data.booking);
-        persistBookingCache(currentId, data.booking);
-      }
-      refreshSnapshot(currentId, finalMessages);
     } catch (err) {
       setError(err.message);
       setLoading(false);
@@ -240,10 +203,11 @@ export default function App() {
         throw new Error(err.detail || `Request failed (${res.status})`);
       }
       const data = await res.json();
-      setSnapshot(data.analytics);
+      setAnalytics(data.analytics);
+      setShowAnalyticsModal(true);
       setEnded(true);
       persistMessages(currentId, messages, true);
-      persistSnapshotCache(currentId, data.analytics);
+      persistAnalyticsCache(currentId, data.analytics);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -257,8 +221,8 @@ export default function App() {
     setCurrentId(uuid());
     setMessages([]);
     setEnded(false);
-    setSnapshot(null);
-    setBooking(null);
+    setAnalytics(null);
+    setShowAnalyticsModal(false);
     setError(null);
     typeOutWelcome();
   }
@@ -272,16 +236,9 @@ export default function App() {
     setMessages(hist);
     const conv = conversations.find((c) => c.id === id);
     setEnded(conv?.ended || false);
-    setSnapshot(conv?.snapshot || null);
-    setBooking(conv?.booking || null);
+    setAnalytics(conv?.analytics || null);
+    setShowAnalyticsModal(false);
     setError(null);
-    // Only fetch a fresh snapshot if we don't already have one cached — an
-    // already-cached snapshot for a past conversation is still accurate
-    // (nothing changed since we last saw it), so re-fetching on every open
-    // just causes a needless "updating…" flicker and API call.
-    if (!conv?.snapshot && !conv?.ended && hist.length > 0) {
-      refreshSnapshot(id, hist);
-    }
   }
 
   function handleDeleteConversation(id) {
@@ -297,16 +254,15 @@ export default function App() {
       setCurrentId(next.id);
       setMessages(loadHistory(next.id));
       setEnded(next.ended || false);
-      setSnapshot(next.snapshot || null);
-      setBooking(next.booking || null);
+      setAnalytics(next.analytics || null);
     } else {
       setCurrentId(uuid());
       setMessages([]);
       setEnded(false);
-      setSnapshot(null);
-      setBooking(null);
+      setAnalytics(null);
       typeOutWelcome();
     }
+    setShowAnalyticsModal(false);
     setError(null);
   }
 
@@ -331,9 +287,6 @@ export default function App() {
         onSelectConversation={selectConversation}
         onDeleteConversation={handleDeleteConversation}
         onNewChat={startNewConversation}
-        snapshot={snapshot}
-        booking={booking}
-        snapshotLoading={snapshotLoading}
         onOpenSettings={() => setShowSettings(true)}
         collapsed={sidebarCollapsed}
         onToggleCollapse={toggleSidebar}
@@ -349,6 +302,11 @@ export default function App() {
             </div>
           </div>
           <div className="chat-header-actions">
+            {ended && analytics && (
+              <button className="btn ghost compact" onClick={() => setShowAnalyticsModal(true)}>
+                View analytics
+              </button>
+            )}
             <button
               className="btn ghost compact"
               onClick={endConversation}
@@ -411,6 +369,17 @@ export default function App() {
           settings={settings}
           onSave={handleSaveSettings}
           onClose={() => setShowSettings(false)}
+        />
+      )}
+
+      {showAnalyticsModal && analytics && (
+        <AnalyticsModal
+          analytics={analytics}
+          onClose={() => setShowAnalyticsModal(false)}
+          onStartNew={() => {
+            setShowAnalyticsModal(false);
+            startNewConversation();
+          }}
         />
       )}
     </div>
